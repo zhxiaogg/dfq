@@ -2,8 +2,11 @@
 name = "dfq"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT OR Apache-2.0"
+keywords = ["sql", "csv", "json", "datafusion", "database"]
+authors = ["Xiaoguang Zhang <zhxiaog@outlook.com>"]
+description = "A CLI tool for running SQLs over various data sources."
+repository = "https://github.com/zhxiaogg/dfq" 
 
 [dependencies]
 datafusion = "33"

@@ -1,6 +1,6 @@
 # DFQ Tool
 
-A command line tool for running SQLs over various data sources.
+A CLI tool for running SQLs over various data sources.
 
 ## Usage
 
