@@ -25,3 +25,20 @@ Options:
 | 2          | Taylor |
 +------------+--------+
 ```
+
+## Status
+### Supported Data Sources
+1. Local line delimeted JSON file, ends with `.json` or `.json.gz`
+1. (TODO) Local JSON array file
+1. Local CSV file, ends with `.csv` or `.csv.gz`
+1. Parquet file, ends with `.parquet` or `.prq`
+
+### Supported Output Formats
+1. Printed table format (default)
+1. JSON array format
+1. JSON line delimeted format
+1. CSV
+1. Parquet
+
+All outputs are directed to stdout now, need the user to manually pipe them to a file if needed.
+

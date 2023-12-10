@@ -1,17 +1,22 @@
 pub mod errors;
 
 use std::io;
+use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
 use datafusion::arrow::csv;
+use datafusion::arrow::datatypes::Schema;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::{self, json};
-use datafusion::prelude::{CsvReadOptions, DataFrame, SQLOptions};
+use datafusion::parquet::arrow::ArrowWriter;
+use datafusion::prelude::{
+    CsvReadOptions, DataFrame, NdJsonReadOptions, ParquetReadOptions, SQLOptions,
+};
 
 use datafusion::prelude::SessionContext;
 
 #[derive(Debug, Parser)]
-#[command(about = "A CLI for running SQLs over various data sources.", long_about = None)]
+#[command(about = "A CLI tool for running SQLs over various data sources.", long_about = None)]
 struct DfqArgs {
     #[clap(short, long)]
     dialect: Option<String>,
@@ -24,7 +29,9 @@ struct DfqArgs {
 #[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
 enum OutputFormat {
     Json,
+    JsonArray,
     Csv,
+    Parquet,
     Terminal,
 }
 
@@ -39,12 +46,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut idx = 0;
     loop {
         match options.next() {
-            Some(opt) if opt.ends_with(".csv") => {
+            Some(opt) if opt.ends_with(".csv") || opt.ends_with(".csv.gz") => {
                 session_context
                     .register_csv(
                         format!("t{}", idx).as_str(),
                         opt.as_str(),
                         CsvReadOptions::default(),
+                    )
+                    .await?;
+                idx += 1;
+            }
+            Some(opt) if opt.ends_with(".json") || opt.ends_with(".json.gz") => {
+                session_context
+                    .register_json(
+                        format!("t{}", idx).as_str(),
+                        opt.as_str(),
+                        NdJsonReadOptions::default(),
+                    )
+                    .await?;
+                idx += 1;
+            }
+            Some(opt) if opt.ends_with(".parquet") || opt.ends_with(".prq") => {
+                session_context
+                    .register_parquet(
+                        format!("t{}", idx).as_str(),
+                        opt.as_str(),
+                        ParquetReadOptions::default(),
                     )
                     .await?;
                 idx += 1;
@@ -88,9 +115,15 @@ async fn print(dataframe: DataFrame, options: &DfqArgs) -> Result<(), Box<dyn st
                 csv_writer.write(&batch)?;
             }
         }
-        OutputFormat::Json => {
+        OutputFormat::JsonArray => {
             let results: Vec<RecordBatch> = dataframe.collect().await?;
             let mut json_writer = json::ArrayWriter::new(io::stdout());
+            json_writer.write_batches(&results.iter().collect::<Vec<_>>())?;
+            json_writer.finish()?;
+        }
+        OutputFormat::Json => {
+            let results: Vec<RecordBatch> = dataframe.collect().await?;
+            let mut json_writer = json::LineDelimitedWriter::new(io::stdout());
             json_writer.write_batches(&results.iter().collect::<Vec<_>>())?;
             json_writer.finish()?;
         }
@@ -98,6 +131,14 @@ async fn print(dataframe: DataFrame, options: &DfqArgs) -> Result<(), Box<dyn st
             let results: Vec<RecordBatch> = dataframe.collect().await?;
             let output = arrow::util::pretty::pretty_format_batches(&results)?.to_string();
             println!("{}", output);
+        }
+        OutputFormat::Parquet => {
+            let schema = Schema::from(dataframe.schema());
+            let mut writer = ArrowWriter::try_new(io::stdout(), Arc::new(schema), None)?;
+            for batch in dataframe.collect().await? {
+                writer.write(&batch)?;
+            }
+            writer.close()?;
         }
     };
     Ok(())
