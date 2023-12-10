@@ -18,8 +18,8 @@ use datafusion::prelude::SessionContext;
 #[derive(Debug, Parser)]
 #[command(about = "A CLI tool for running SQLs over various data sources.", long_about = None)]
 struct DfqArgs {
-    #[clap(short, long)]
-    dialect: Option<String>,
+    #[clap(short, long, default_value = "ansi")]
+    dialect: String,
     #[clap(short, long,value_enum, default_value_t=OutputFormat::Terminal)]
     output: OutputFormat,
     /// data sources and SQL, e.g. `sample.csv "select * from t0"`
@@ -94,8 +94,8 @@ async fn execute_statement(
     options: &DfqArgs,
 ) -> Result<DataFrame, Box<dyn std::error::Error>> {
     let state = session_context.state();
-    let dialect = options.dialect.clone().unwrap_or("generic".to_string());
-    let statement = state.sql_to_statement(query, dialect.as_str())?;
+    let dialect = options.dialect.as_str();
+    let statement = state.sql_to_statement(query, dialect)?;
     let logical_plan = state.statement_to_plan(statement).await?;
 
     let sql_options = SQLOptions::new()
@@ -103,7 +103,8 @@ async fn execute_statement(
         .with_allow_ddl(false);
     sql_options.verify_plan(&logical_plan)?;
 
-    let dataframe = session_context.execute_logical_plan(logical_plan).await?;
+    let optimized = state.optimize(&logical_plan)?;
+    let dataframe = session_context.execute_logical_plan(optimized).await?;
     Ok(dataframe)
 }
 
@@ -116,15 +117,17 @@ async fn print(dataframe: DataFrame, options: &DfqArgs) -> Result<(), Box<dyn st
             }
         }
         OutputFormat::JsonArray => {
-            let results: Vec<RecordBatch> = dataframe.collect().await?;
             let mut json_writer = json::ArrayWriter::new(io::stdout());
-            json_writer.write_batches(&results.iter().collect::<Vec<_>>())?;
+            for batch in dataframe.collect().await? {
+                json_writer.write(&batch)?;
+            }
             json_writer.finish()?;
         }
         OutputFormat::Json => {
-            let results: Vec<RecordBatch> = dataframe.collect().await?;
             let mut json_writer = json::LineDelimitedWriter::new(io::stdout());
-            json_writer.write_batches(&results.iter().collect::<Vec<_>>())?;
+            for batch in dataframe.collect().await? {
+                json_writer.write(&batch)?;
+            }
             json_writer.finish()?;
         }
         OutputFormat::Terminal => {
